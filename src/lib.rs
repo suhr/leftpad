@@ -1,21 +1,34 @@
-#![feature(type_ascription)]
 #![cfg_attr(not(feature = "contracts"), feature(stmt_expr_attributes, proc_macro_hygiene))]
 extern crate creusot_contracts;
-
 use creusot_contracts::*;
 
-#[ensures(forall<i : Int> 0 <= i && i < (@^v).len() ==> (@^v)[i] == 0u32)]
-#[ensures((@*v).len() == (@^v).len())]
-pub fn all_zero(v: &mut Vec<u32>) {
-    let mut i = 0;
-    let old_v = ghost! { v };
-    // This invariant is because why3 can't determine that the prophecy isn't modified by the loop
-    // Either Why3 or Creusot should be improved to do this automaticallly (probably why3)
-    #[invariant(proph_const, ^v == ^old_v.inner())]
-    #[invariant(in_bounds, (@*v).len() == (@*old_v.inner()).len())]
-    #[invariant(all_zero, forall<j : Int> 0 <= j && j < i.into() ==> (@*v)[j] == 0u32)]
-    while i < v.len() {
-        v[i] = 0;
-        i += 1;
-    }
-}
+#[allow(non_camel_case_types)] type uz = usize;
+
+#[cfg(not(feature = "contracts"))]
+pub trait Model {}
+
+#[logic] fn lmax(a:Int, b:Int)-> Int {pearlite! {if a<b {b} else {a}}}
+
+#[ensures(@result == lmax(@a,@b))]
+fn maxz(a:uz, b:uz)-> uz {if a<b {b} else {a}}
+#[ensures(@result == lmax(@a-@b,0))]
+fn sub(a:uz, b:uz)-> uz {if a<b {0} else {a-b}}
+
+#[ensures( (@result).len()==lmax(@l,(@s).len()) )]
+#[ensures(forall<i:uz> @i < lmax(@l-(@s).len(), 0) ==> @(@result)[@i] == @c)]
+#[ensures
+  ( forall<i:uz> @i >= lmax(@l-(@s).len(), 0) && @i < lmax(@l,(@s).len())
+    ==> @(@result)[@i] == @(@s)[@i - lmax(@l-(@s).len(), 0)]              )]
+pub fn leftpad<C:Copy+Model>(c:C, l:uz, s:&[C])-> Vec<C>
+  { let rl = maxz(l,s.len());  let pl = sub(l,s.len());
+    let (mut r, mut i) = (Vec::<C>::with_capacity(rl), 0usize);
+
+    #[invariant(a1, @i>=0 && @i<=@pl && (@r).len()==@i)]
+    #[invariant(a2, forall<j:uz> @j<@i ==> @(@r)[@j] == @c)]
+    while i<pl {r.push(c); i+=1}
+
+    #[invariant(b1, @i>=@pl && @i<=@rl && (@r).len()==@i)]
+    #[invariant(b2, forall<j:uz> @j>=@pl && @j<@i ==> @(@r)[@j] == @(@s)[@j-@pl])]
+    #[invariant(b3, forall<j:uz> @j<@pl ==> @(@r)[@j] == @c)]
+    while i<rl {r.push(s[i-pl]); i+=1}
+    r                                                                              }
